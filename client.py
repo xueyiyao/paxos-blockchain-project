@@ -24,6 +24,7 @@ def do_exit(sock_client_server1, sock_client_server2, sock_client_server3, sock_
 
 # handle inputs
 def handle_inputs(): 
+    global SERVER_SOCKETS
     while True: 
         try: 
             line = input()
@@ -42,6 +43,7 @@ threading.Thread(target=handle_inputs, args=()).start()
 
 while True: 
     # server listening for msgs
+    global SERVER_SOCKETS
     try: 
         word1 = SERVER_SOCKETS[0].recv(1024)
         word2 = SERVER_SOCKETS[1].recv(1024)
