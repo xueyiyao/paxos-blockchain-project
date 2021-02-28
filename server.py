@@ -2,6 +2,7 @@ import socket
 import sys
 import threading
 import os
+from blockchain import Blockchain
 
 global PORTS, SERVER_NUMS
 global SERVER_ID, SERVER_PORT
@@ -22,6 +23,9 @@ SERVER_PORT = None
 
 LISTEN_SOCK = None
 CONNECTION_SOCKS = []
+
+# Data Structures
+BLOCKCHAIN = None
 
 def do_exit(LISTEN_SOCKET, sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4):
     LISTEN_SOCKET.close()
@@ -80,6 +84,10 @@ if __name__ == '__main__':
     SERVER_PORT = PORTS[SERVER_ID]
     # Remove Itself From Server Array
     SERVER_NUMS.remove(SERVER_ID)
+
+    BLOCKCHAIN = Blockchain()
+
+    # BLOCKCHAIN.append(operation, nonce)
 
     LISTEN_SOCK = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     LISTEN_SOCK.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
