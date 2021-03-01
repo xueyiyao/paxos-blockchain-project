@@ -2,6 +2,7 @@ import socket
 import sys
 import threading
 import os
+from queue import Queue
 from blockchain import Blockchain
 
 global PORTS, SERVER_NUMS
@@ -26,6 +27,8 @@ CONNECTION_SOCKS = []
 
 # Data Structures
 BLOCKCHAIN = None
+QUEUE = Queue()
+KEY_VALUE_STORE = {}
 
 def do_exit(LISTEN_SOCKET, sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4):
     LISTEN_SOCKET.close()
