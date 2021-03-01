@@ -3,26 +3,15 @@ import sys
 import threading
 import os
 
-# client listen 
-# sock_client_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# sock_client_listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# sock_client_listen.bind((socket.gethostname(), process_port[sys.argv[1]]))
-# sock_client_listen.listen(32)
-
-sock_client_server1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_client_server1.connect((socket.gethostname(), 5001))
-
-sock_client_server2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_client_server2.connect((socket.gethostname(), 5002))
-
-sock_client_server3 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_client_server3.connect((socket.gethostname(), 5003))
-
-sock_client_server4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_client_server4.connect((socket.gethostname(), 5004))
-
-sock_client_server5 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_client_server5.connect((socket.gethostname(), 5005))
+global SERVER_PORTS, SERVER_SOCKETS
+SERVER_PORTS = {
+    1: 5001, 
+    2: 5002,
+    3: 5003,
+    4: 5004,
+    5: 5005
+}
+SERVER_SOCKETS = []
 
 # exit function to close all sockets
 def do_exit(sock_client_server1, sock_client_server2, sock_client_server3, sock_client_server4, sock_client_server5):
@@ -35,33 +24,39 @@ def do_exit(sock_client_server1, sock_client_server2, sock_client_server3, sock_
 
 # handle inputs
 def handle_inputs(): 
+    global SERVER_SOCKETS
     while True: 
         try: 
             line = input()
             line_split = line.split(" ")
             if (line == 'write'):
                 print("writing to other servers")
-                sock_client_server1.sendall(b'test')
-                sock_client_server2.sendall(b'test')
-                sock_client_server3.sendall(b'test')
-                sock_client_server4.sendall(b'test')
-                sock_client_server5.sendall(b'test')
+                for i in range(5):
+                    SERVER_SOCKETS[i].sendall(b'test')
             elif (line == 'exit'):
-                do_exit(sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4, sock_server_server5)
+                do_exit(SERVER_SOCKETS[0], SERVER_SOCKETS[1], SERVER_SOCKETS[2], SERVER_SOCKETS[3], SERVER_SOCKETS[4])
         except EOFError:
             pass
 
-threading.Thread(target=handle_inputs, args=()).start()
+def handle_recv():
+    while True: 
+        # server listening for msgs
+        global SERVER_SOCKETS
+        try: 
+            word1 = SERVER_SOCKETS[0].recv(1024).decode()
+            word2 = SERVER_SOCKETS[1].recv(1024).decode()
+            word3 = SERVER_SOCKETS[2].recv(1024).decode()
+            word4 = SERVER_SOCKETS[3].recv(1024).decode()
+            word5 = SERVER_SOCKETS[4].recv(1024).decode()
+            print(word1, word2, word3, word4, word5)
+        except KeyboardInterrupt:
+            do_exit(SERVER_SOCKETS[0], SERVER_SOCKETS[1], SERVER_SOCKETS[2], SERVER_SOCKETS[3], SERVER_SOCKETS[4])
 
+if __name__ == '__main__':
+    for i in range(5):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        SERVER_SOCKETS.append(sock)
+        SERVER_SOCKETS[i].connect((socket.gethostname(), SERVER_PORTS[i+1]))
 
-while True: 
-    # server listening for msgs
-    try: 
-        word1 = sock_client_server1.recv(1024)
-        word2 = sock_client_server2.recv(1024)
-        word3 = sock_client_server3.recv(1024)
-        word4 = sock_client_server4.recv(1024)
-        word5 = sock_client_server5.recv(1024)
-        print(word1, word2, word3, word4, word5)
-    except KeyboardInterrupt:
-        do_exit(sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4, sock_server_server5)
+    threading.Thread(target=handle_inputs, args=()).start()
+    handle_recv()

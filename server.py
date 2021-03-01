@@ -2,38 +2,36 @@ import socket
 import sys
 import threading
 import os
+from queue import Queue
+from blockchain import Blockchain
 
-process_port = {
-    "1": 5001, 
-    "2": 5002,
-    "3": 5003,
-    "4": 5004,
-    "5": 5005
+global PORTS, SERVER_NUMS
+global SERVER_ID, SERVER_PORT
+global LISTEN_SOCK, CONNECTION_SOCKS
+
+PORTS = {
+    1: 5001, 
+    2: 5002,
+    3: 5003,
+    4: 5004,
+    5: 5005
 }
 
-other_servers = ["1","2","3","4","5"]
-other_servers.remove(sys.argv[1])
+SERVER_NUMS = [1,2,3,4,5]
 
-PROCESS_ID = sys.argv[1]
+SERVER_ID = None
+SERVER_PORT = None
 
-SERVER_PORT = process_port[sys.argv[1]]
+LISTEN_SOCK = None
+CONNECTION_SOCKS = []
 
-# server listen 
-sock_server_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_server_listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-print(process_port[sys.argv[1]])
-sock_server_listen.bind((socket.gethostname(), process_port[sys.argv[1]]))
-sock_server_listen.listen(32)
+# Data Structures
+BLOCKCHAIN = None
+QUEUE = Queue()
+KEY_VALUE_STORE = {}
 
-# connections to each of the other servers
-sock_server_server1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_server_server2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_server_server3 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_server_server4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-# exit function to close all sockets
-def do_exit(sock_server_listen, sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4):
-    sock_server_listen.close()
+def do_exit(LISTEN_SOCKET, sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4):
+    LISTEN_SOCKET.close()
     sock_server_server1.close()
     sock_server_server2.close()
     sock_server_server3.close()
@@ -42,29 +40,24 @@ def do_exit(sock_server_listen, sock_server_server1, sock_server_server2, sock_s
 
 # handle inputs
 def handle_inputs(): 
+    global CONNECTION_SOCKS, PORTS, SERVER_NUMS
     while True: 
         try: 
             line = input()
             line_split = line.split(" ")
             if (line == 'connect'):
                 print("connecting to other servers")
-                sock_server_server1.connect((socket.gethostname(), process_port[other_servers[0]]))
-                sock_server_server2.connect((socket.gethostname(), process_port[other_servers[1]]))
-                sock_server_server3.connect((socket.gethostname(), process_port[other_servers[2]]))
-                sock_server_server4.connect((socket.gethostname(), process_port[other_servers[3]]))
+                for i in range(4):
+                    CONNECTION_SOCKS[i].connect((socket.gethostname(), PORTS[SERVER_NUMS[i]]))
                 print("connected to other servers")
             elif (line == 'write'):
                 print("writing to other servers")
-                sock_server_server1.sendall(b'test')
-                sock_server_server2.sendall(b'test')
-                sock_server_server3.sendall(b'test')
-                sock_server_server4.sendall(b'test')
+                for i in range(4):
+                    CONNECTION_SOCKS[i].sendall(b'test')
             elif (line == 'exit'):
-                do_exit(sock_server_listen, sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4)
+                do_exit(LISTEN_SOCK, CONNECTION_SOCKS[0], CONNECTION_SOCKS[1], CONNECTION_SOCKS[2], CONNECTION_SOCKS[3])
         except EOFError:
             pass
-
-threading.Thread(target=handle_inputs, args=()).start()
 
 # handle recvs
 def handle_recvs(stream, addr):
@@ -77,10 +70,40 @@ def handle_recvs(stream, addr):
             stream.close()
             break
 
-while True: 
-    # server listening for msgs
-    try: 
-        stream, addr = sock_server_listen.accept()
-        threading.Thread(target=handle_recvs, args=(stream, addr)).start()
-    except KeyboardInterrupt:
-        do_exit(sock_server_listen, sock_server_server1, sock_server_server2, sock_server_server3, sock_server_server4)
+def listen():
+    global LISTEN_SOCK
+    LISTEN_SOCK.listen(32)
+
+    while True: 
+        # server listening for msgs
+        try: 
+            stream, addr = LISTEN_SOCK.accept()
+            threading.Thread(target=handle_recvs, args=(stream, addr)).start()
+        except KeyboardInterrupt:
+            do_exit(LISTEN_SOCK, CONNECTION_SOCKS[0], CONNECTION_SOCKS[1], CONNECTION_SOCKS[2], CONNECTION_SOCKS[3])
+
+if __name__ == '__main__':
+    SERVER_ID = int(sys.argv[1])
+    SERVER_PORT = PORTS[SERVER_ID]
+    # Remove Itself From Server Array
+    SERVER_NUMS.remove(SERVER_ID)
+
+    BLOCKCHAIN = Blockchain()
+
+    # BLOCKCHAIN.append(operation, nonce)
+
+    LISTEN_SOCK = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    LISTEN_SOCK.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    LISTEN_SOCK.bind((socket.gethostname(), SERVER_PORT))
+
+    # connections to each of the other servers
+    for i in range(4):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        CONNECTION_SOCKS.append(sock)
+
+    threading.Thread(target=listen).start()
+
+    handle_inputs()
+
+    
+
