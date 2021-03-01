@@ -54,6 +54,14 @@ def handle_inputs():
                 print("writing to other servers")
                 for i in range(4):
                     CONNECTION_SOCKS[i].sendall(b'test')
+            elif (line_split[0] == 'blockchain'):
+                operation = line_split[1]
+                BLOCKCHAIN.append(operation, 'nonce_stub')
+                BLOCKCHAIN.save(SERVER_ID)
+                print(BLOCKCHAIN)
+            elif (line_split[0] == 'load'):
+                BLOCKCHAIN.load(SERVER_ID)
+                print(BLOCKCHAIN)
             elif (line == 'exit'):
                 do_exit(LISTEN_SOCK, CONNECTION_SOCKS[0], CONNECTION_SOCKS[1], CONNECTION_SOCKS[2], CONNECTION_SOCKS[3])
         except EOFError:
@@ -89,8 +97,6 @@ if __name__ == '__main__':
     SERVER_NUMS.remove(SERVER_ID)
 
     BLOCKCHAIN = Blockchain()
-
-    # BLOCKCHAIN.append(operation, nonce)
 
     LISTEN_SOCK = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     LISTEN_SOCK.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
