@@ -55,8 +55,10 @@ def handle_inputs():
                 for i in range(4):
                     CONNECTION_SOCKS[i].sendall(b'test')
             elif (line_split[0] == 'blockchain'):
-                operation = line_split[1]
-                BLOCKCHAIN.append(operation, 'nonce_stub')
+                op_op = line_split[1]
+                op_key = line_split[2]
+                op_value = line_split[3] if (len(line_split) > 3) else None
+                BLOCKCHAIN.append(op_op, op_key, op_value, 'nonce_stub')
                 BLOCKCHAIN.save(SERVER_ID)
                 print(BLOCKCHAIN)
             elif (line_split[0] == 'load'):
