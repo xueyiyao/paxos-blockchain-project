@@ -72,48 +72,53 @@ def handle_inputs():
                 BLOCKCHAIN.load(SERVER_ID)
                 print(BLOCKCHAIN)
             elif (line == 'e'):
-                do_exit(LISTEN_SOCK, CONNECTION_SOCKS[0], CONNECTION_SOCKS[1], CONNECTION_SOCKS[2], CONNECTION_SOCKS[3])
+                do_exit(LISTEN_SOCK, CONNECTION_SOCKS[SERVER_NUMS[0]], CONNECTION_SOCKS[SERVER_NUMS[1]],\
+                    CONNECTION_SOCKS[SERVER_NUMS[2]], CONNECTION_SOCKS[SERVER_NUMS[3]])
         except EOFError:
             pass
 
 
 #####PAXOS#####
-global PREP_COUNT
-PREP_COUNT = 0
-
+global PROMISE_COUNTS, ACCEPT_BLOCK
+PROMISE_COUNTS = {}
+ACCEPT_NUM = (None, None, None)
+ACCEPT_BLOCK = None
 ###PHASE 1###
-def prepare_helper(i):
-    global PREP_COUNT
-    CONNECTION_SOCKS[i].sendall("Prepare ({},{},{})".format(SEQ_NUM, SERVER_ID, DEPTH).encode())
-    message = CONNECTION_SOCKS[i].recv(1024).decode()
-    print(message)
-    # PREP_COUNT += 1
-    # if PREP_COUNT == 4:
-    #     PREP_COUNT = 0
+# def prepare_helper(i):
+#     global PROMISE_COUNT
+#     CONNECTION_SOCKS[i].sendall("Prepare ({},{},{})".format(SEQ_NUM, SERVER_ID, DEPTH).encode())
+#     message = CONNECTION_SOCKS[i].recv(1024).decode()
+#     print(message)
+    # PROMISE_COUNT += 1
+    # if PROMISE_COUNT == 4:
+    #     PROMISE_COUNT = 0
 
 def prepare():
-    global CONNECTION_SOCKS, PREP_COUNT, SEQ_NUM, SERVER_ID, DEPTH
+    global CONNECTION_SOCKS, PROMISE_COUNT, SEQ_NUM, SERVER_ID, DEPTH
     threads = []
     print("Preparing")
-    LATEST_BALLOT = (DEPTH ,SEQ_NUM, SERVER_ID)
+    LATEST_BALLOT = (DEPTH, SEQ_NUM, SERVER_ID)
     for i in range(len(CONNECTION_SOCKS)):
-        thread = threading.Thread(target=prepare_helper, args=[SERVER_NUMS[i]])
-        threads.append(thread)
-        threads[i].start()
+        CONNECTION_SOCKS[SERVER_NUMS[i]].sendall("Prepare ({},{},{})".format(DEPTH, SEQ_NUM, SERVER_ID).encode())
+        # thread = threading.Thread(target=prepare_helper, args=[SERVER_NUMS[i]])
+        # threads.append(thread)
+        # threads[i].start()
+        
+    # for thread in threads:
+    #     thread.join()
 
-    for thread in threads:
-        thread.join()
-
-def promise(seq_num, server_id, depth):
+def promise(depth, seq_num, server_id):
     global LATEST_BALLOT, CONNECTION_SOCKS, SERVER_NUMS
     print("In Promise")
     if (depth, seq_num, server_id) > LATEST_BALLOT:
         LATEST_BALLOT = (depth, seq_num, server_id)
-    temp_str = "Promise ({},{},{}) {}".format(LATEST_BALLOT[0], LATEST_BALLOT[1], LATEST_BALLOT[2], "STUB")
-    CONNECTION_SOCKS[SERVER_NUMS[server_id]].sendall(temp_str.encode())
+    temp_str = "Promise ({},{},{}) ({},{},{}) {}".format( \
+        depth, seq_num, server_id, ACCEPT_NUM[0], ACCEPT_NUM[1], ACCEPT_NUM[2], ACCEPT_BLOCK)
+    CONNECTION_SOCKS[server_id].sendall(temp_str.encode())
         
 # handle recvs
 def handle_recvs(stream, addr):
+    global PROMISE_COUNTS, SERVER_ID
     while True:
         try:
             word = stream.recv(1024).decode()
@@ -124,6 +129,20 @@ def handle_recvs(stream, addr):
                 print(ballot)
                 ballot = ballot.split(',')
                 promise(int(ballot[0]), int(ballot[1]), int(ballot[2]))
+            if word_split[0] == "Promise":
+                bal = word_split[1]
+                if bal not in PROMISE_COUNTS:
+                    PROMISE_COUNTS[bal] = 2
+                elif PROMISE_COUNTS[bal] == 2:
+                    PROMISE_COUNTS[bal] = PROMISE_COUNTS[bal] + 1
+                    print("GOT MAJORITY")
+                    # check if any AcceptVal is not null
+                    # Send accept message
+                elif PROMISE_COUNTS[bal] == 4:
+                    print("GOT ALL")
+                    del PROMISE_COUNTS[bal]
+                else:
+                    PROMISE_COUNTS[bal] = PROMISE_COUNTS[bal] + 1
             elif word_split[0] == "Operation":
                 stream.sendall("received in server {}".format(SERVER_ID).encode())
                 prepare()
@@ -142,7 +161,8 @@ def listen():
             stream, addr = LISTEN_SOCK.accept()
             threading.Thread(target=handle_recvs, args=(stream, addr)).start()
         except KeyboardInterrupt:
-            do_exit(LISTEN_SOCK, CONNECTION_SOCKS[0], CONNECTION_SOCKS[1], CONNECTION_SOCKS[2], CONNECTION_SOCKS[3])
+            do_exit(LISTEN_SOCK, CONNECTION_SOCKS[SERVER_NUMS[0]], CONNECTION_SOCKS[SERVER_NUMS[1]],\
+                    CONNECTION_SOCKS[SERVER_NUMS[2]], CONNECTION_SOCKS[SERVER_NUMS[3]])
 
 if __name__ == '__main__':
     SERVER_ID = int(sys.argv[1])
