@@ -84,28 +84,13 @@ PROMISE_COUNTS = {}
 ACCEPT_NUM = (None, None, None)
 ACCEPT_BLOCK = None
 ###PHASE 1###
-# def prepare_helper(i):
-#     global PROMISE_COUNT
-#     CONNECTION_SOCKS[i].sendall("Prepare ({},{},{})".format(SEQ_NUM, SERVER_ID, DEPTH).encode())
-#     message = CONNECTION_SOCKS[i].recv(1024).decode()
-#     print(message)
-    # PROMISE_COUNT += 1
-    # if PROMISE_COUNT == 4:
-    #     PROMISE_COUNT = 0
-
 def prepare():
-    global CONNECTION_SOCKS, PROMISE_COUNT, SEQ_NUM, SERVER_ID, DEPTH
+    global CONNECTION_SOCKS, SEQ_NUM, SERVER_ID, DEPTH
     threads = []
     print("Preparing")
     LATEST_BALLOT = (DEPTH, SEQ_NUM, SERVER_ID)
     for i in range(len(CONNECTION_SOCKS)):
         CONNECTION_SOCKS[SERVER_NUMS[i]].sendall("Prepare ({},{},{})".format(DEPTH, SEQ_NUM, SERVER_ID).encode())
-        # thread = threading.Thread(target=prepare_helper, args=[SERVER_NUMS[i]])
-        # threads.append(thread)
-        # threads[i].start()
-        
-    # for thread in threads:
-    #     thread.join()
 
 def promise(depth, seq_num, server_id):
     global LATEST_BALLOT, CONNECTION_SOCKS, SERVER_NUMS
