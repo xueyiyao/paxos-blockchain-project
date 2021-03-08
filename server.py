@@ -119,9 +119,7 @@ def accept(bal, myVal):
         CONNECTION_SOCKS[SERVER_NUMS[i]].sendall("Accept {} {}".format(bal, myVal).encode())
         
 def str_to_tuple(s):
-    print("S:", s)
     arr = re.search("\((.*)\)", s).group(1)
-    print("Arr:", (arr))
     return eval(arr)
 
 # handle recvs
@@ -152,10 +150,7 @@ def handle_recvs(stream, addr):
                 elif BALLOT_COUNTS[bal] == 2:
                     BALLOT_COUNTS[bal] = BALLOT_COUNTS[bal] + 1
                     print("GOT MAJORITY")
-                    print(BALLOT_BV)
                     # check if any v is not null
-                    print("b:", b)
-                    print("v:", v)
                     if v != (None, None, None):
                         # set BALLOT_BV for bal
                         if BALLOT_BV[bal][0] < b:
