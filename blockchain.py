@@ -125,6 +125,12 @@ class Blockchain:
         NEW_BLOCK.prev = PREV_BLOCK
         self.tail = NEW_BLOCK
 
+    def append_block(self, b): 
+        PREV_BLOCK = self.tail
+        PREV_BLOCK.next = b
+        b.prev = PREV_BLOCK
+        self.tail = b
+
 
     def save(self, server_id):
         filename = "blockchain{}.txt".format(str(server_id))
