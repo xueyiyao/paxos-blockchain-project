@@ -79,23 +79,24 @@ def handle_inputs():
 
 
 #####PAXOS#####
-global PROMISE_COUNTS, PROMISE_SOCKETS, ACCEPT_NUM, ACCEPT_BLOCK
-PROMISE_COUNTS = {}
-PROMISE_SOCKETS = {}
+global BALLOT_COUNTS, ACCEPT_NUM, ACCEPT_BLOCK
+# Counts the number of Promises received for one ballot number
+BALLOT_COUNTS = {}
+# Keep tracks of highest b and corresponding v for each bal 
+# Received from promise message: ("Promise", bal, b , v)
+BALLOT_BV = {}
+# Most recently accepted Ballot Number from the accept phase
 ACCEPT_NUM = (None, None, None)
-ACCEPT_BLOCK = None
-
-global ONE_V, HIGHEST_BV
-ONE_V = False
-HIGHEST_BV = None
-
+# Most recently accepted Block from the accept phase
+ACCEPT_BLOCK = (None, None, None)
 
 ###PHASE 1###
-def prepare():
+def prepare(op):
     global CONNECTION_SOCKS, SEQ_NUM, SERVER_ID, DEPTH
     threads = []
     print("Preparing")
     LATEST_BALLOT = (DEPTH, SEQ_NUM, SERVER_ID)
+    BALLOT_BV[LATEST_BALLOT] = ((0, 0, 0), op)
     for i in range(len(CONNECTION_SOCKS)):
         CONNECTION_SOCKS[SERVER_NUMS[i]].sendall("Prepare ({},{},{})".format(DEPTH, SEQ_NUM, SERVER_ID).encode())
 
@@ -104,24 +105,28 @@ def promise(depth, seq_num, server_id):
     print("In Promise")
     if (depth, seq_num, server_id) > LATEST_BALLOT:
         LATEST_BALLOT = (depth, seq_num, server_id)
-    temp_str = "Promise ({},{},{}) ({},{},{}) {} {}".format( \
-        depth, seq_num, server_id, ACCEPT_NUM[0], ACCEPT_NUM[1], ACCEPT_NUM[2], ACCEPT_BLOCK, SERVER_ID)
+    temp_str = "Promise ({},{},{}) ({},{},{}) ({},{},{})".format( \
+        depth, seq_num, server_id, ACCEPT_NUM[0], ACCEPT_NUM[1], ACCEPT_NUM[2], ACCEPT_BLOCK[0], ACCEPT_BLOCK[1], ACCEPT_BLOCK[2])
+    if SERVER_ID == 1 or SERVER_ID == 2:
+        temp_str = "Promise ({},{},{}) ({},{},{}) ({},{},{})".format( \
+        depth, seq_num, server_id, 30, 30, 1, "\"FFFF\"", "\"set3030\"", "\"nonce_stub\"")
     CONNECTION_SOCKS[server_id].sendall(temp_str.encode())
 
 ###PHASE 2###
-def accept(bal, myVal, socks):
+def accept(bal, myVal):
     print("In Accept")
-    for server_id in socks:
-        CONNECTION_SOCKS[server_id].sendall("Accept {} {}".format(bal, myVal).encode())
+    for i in range(len(CONNECTION_SOCKS)):
+        CONNECTION_SOCKS[SERVER_NUMS[i]].sendall("Accept {} {}".format(bal, myVal).encode())
         
 def str_to_tuple(s):
+    print("S:", s)
     arr = re.search("\((.*)\)", s).group(1)
+    print("Arr:", (arr))
     return eval(arr)
 
 # handle recvs
 def handle_recvs(stream, addr):
-    global PROMISE_COUNTS, SERVER_ID
-    global ONE_V, HIGHEST_BV
+    global BALLOT_COUNTS, SERVER_ID
     while True:
         try:
             word = stream.recv(1024).decode()
@@ -136,47 +141,40 @@ def handle_recvs(stream, addr):
                 print(word)
                 bal = str_to_tuple(word_split[1]) if word_split[1] != "None" else None
                 b = str_to_tuple(word_split[2]) if word_split[2] != "None" else None
+                print("3:", word_split[3])
                 v = str_to_tuple(word_split[3]) if word_split[3] != "None" else None
-                sid = int(word_split[4])
-                if bal not in PROMISE_COUNTS:
-                    PROMISE_COUNTS[bal] = 2
-                    PROMISE_SOCKETS[bal] = []
-                    PROMISE_SOCKETS[bal].append(sid)
-                    if v is not None:
-                        ONE_V = True
-                        # set HIGHEST_BV
-                        if HIGHEST_BV is None or HIGHEST_BV[0] < b:
-                            HIGHEST_BV = (b, v)
-                elif PROMISE_COUNTS[bal] == 2:
-                    PROMISE_COUNTS[bal] = PROMISE_COUNTS[bal] + 1
-                    PROMISE_SOCKETS[bal].append(sid)
+                if bal not in BALLOT_COUNTS:
+                    BALLOT_COUNTS[bal] = 2
+                    # BALLOT_BV[bal] = (None, None)
+                    if v != (None, None, None):
+                        # set BALLOT_BV for bal
+                        BALLOT_BV[bal] = (b, v)
+                elif BALLOT_COUNTS[bal] == 2:
+                    BALLOT_COUNTS[bal] = BALLOT_COUNTS[bal] + 1
                     print("GOT MAJORITY")
-                    print(bal)
+                    print(BALLOT_BV)
                     # check if any v is not null
-                    if v is not None:
-                        ONE_V = True
-                        # set HIGHEST_BV
-                        if HIGHEST_BV is None or HIGHEST_BV[0] < b:
-                            HIGHEST_BV = (b, v)
-                    
+                    print("b:", b)
+                    print("v:", v)
+                    if v != (None, None, None):
+                        # set BALLOT_BV for bal
+                        if BALLOT_BV[bal][0] < b:
+                            BALLOT_BV[bal] = (b, v)
+
                     # Send accept message
-                    if HIGHEST_BV is not None:
-                        accept(bal, HIGHEST_BV[1], PROMISE_SOCKETS[bal])
-                    else:
-                        accept(bal, None, PROMISE_SOCKETS[bal])
-                    ONE_V = False
-                    HIGHEST_BV = None
-                elif PROMISE_COUNTS[bal] == 4:
+                    accept(bal, BALLOT_BV[bal][1])
+                elif BALLOT_COUNTS[bal] == 4:
                     print("GOT ALL")
-                    del PROMISE_COUNTS[bal]
-                    del PROMISE_SOCKETS[bal]
+                    del BALLOT_COUNTS[bal]
+                    del BALLOT_BV[bal]
                 else:
-                    PROMISE_COUNTS[bal] = PROMISE_COUNTS[bal] + 1
+                    BALLOT_COUNTS[bal] = BALLOT_COUNTS[bal] + 1
             elif word_split[0] == "Accept":
                 print(word)
-            elif word_split[0] == "Operation":
+            elif "Operation" in word:
                 stream.sendall("received in server {}".format(SERVER_ID).encode())
-                prepare()
+                op = re.search("Operation\((.*)\)", word).group(1)
+                prepare(op)
         except socket.error as e:
             stream.close()
             break

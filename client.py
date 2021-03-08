@@ -49,11 +49,12 @@ def handle_inputs():
             elif (line == 'exit'):
                 # do_exit(SERVER_SOCKETS[0], SERVER_SOCKETS[1], SERVER_SOCKETS[2], SERVER_SOCKETS[3], SERVER_SOCKETS[4])
                 close_connection()
-            elif line_split[0] == "Operation":
+            elif "Operation" in line:
                 if LEADER_HINT is None:
                     temp = random.randint(1,5)
+                    temp = 5
                     connect_server(temp)
-                    SERVER_SOCKET.sendall("Operation".encode())
+                    SERVER_SOCKET.sendall(line.encode())
                     message_recv = SERVER_SOCKET.recv(1024).decode()
                     print(message_recv)
                     close_connection()
