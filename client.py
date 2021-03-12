@@ -3,6 +3,7 @@ import sys
 import threading
 import os
 import random
+import pickle
 
 global SERVER_PORTS, SERVER_SOCKETS, SERVER_SOCKET, LEADER_HINT
 SERVER_PORTS = {
@@ -54,7 +55,7 @@ def handle_inputs():
                     temp = random.randint(1,5)
                     temp = 5
                     connect_server(temp)
-                    SERVER_SOCKET.sendall(line.encode())
+                    SERVER_SOCKET.sendall(pickle.dumps(("Operation", line)))
                     message_recv = SERVER_SOCKET.recv(1024).decode()
                     print(message_recv)
                     close_connection()

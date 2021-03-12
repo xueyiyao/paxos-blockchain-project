@@ -55,9 +55,12 @@ class Operation:
         del self._value
 
 class Block:
-    def __init__(self, prev_hash="None", op_op=None, op_key=None, op_value=None, nonce="nonce_stub"):
+    def __init__(self, prev_hash="None", op_op=None, op_key=None, op_value=None, nonce="nonce_stub", op=None):
         self._prev_hash = prev_hash
-        self._operation = Operation(op_op, op_key, op_value)
+        if op != None:
+            self._operation = op
+        else:
+            self._operation = Operation(op_op, op_key, op_value)
         self._nonce = None
         self.next = None
         self.prev = None
