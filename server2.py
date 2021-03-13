@@ -12,7 +12,7 @@ from blockchain import Blockchain, Block, Operation
 global PORTS, SERVER_NUMS
 global SERVER_ID, SERVER_PORT
 global LISTEN_SOCK, CONNECTION_SOCKS
-global SEQ_NUM, DEPTH, LATEST_BALLOT
+global SEQ_NUM, DEPTH, LATEST_BALLOT, LEADER_HINT
 
 PORTS = {
     1: 5001, 
@@ -40,6 +40,8 @@ BALLOT_NUM = None
 SEQ_NUM = None
 DEPTH = None
 LATEST_BALLOT = None
+
+LEADER_HINT = None
 
 def do_exit():
     global LISTEN_SOCK, CONNECTION_SOCKS, SERVER_NUMS
@@ -74,6 +76,9 @@ def handle_inputs():
             elif (line_split[0] == 'load'):
                 BLOCKCHAIN.load(SERVER_ID)
                 print(BLOCKCHAIN)
+            elif (line_split[0] == 'p'):
+                print(BLOCKCHAIN)
+                print("STORE:", KEY_VALUE_STORE)
             elif (line == 'e'):
                 do_exit()
         except EOFError:
@@ -91,6 +96,8 @@ BALLOT_BV = {}
 ACCEPT_NUM = (None, None, None)
 # Most recently accepted Block from the accept phase
 ACCEPT_BLOCK = None
+
+ACCEPTED_COUNTS = {}
 
 ###PHASE 1###
 def prepare():
@@ -115,20 +122,47 @@ def accept(bal, myVal):
 
     if myVal is None:
         PREV_BLOCK = BLOCKCHAIN.tail
-        str_to_be_hashed = str(PREV_BLOCK.operation) + str(PREV_BLOCK.nonce) + str(PREV_BLOCK.prev_hash)
-        prev_hash = str(hashlib.sha256(str_to_be_hashed.encode()).hexdigest())
+        prev_hash = "None"
+        if PREV_BLOCK is not None:
+            str_to_be_hashed = str(PREV_BLOCK.operation) + str(PREV_BLOCK.nonce) + str(PREV_BLOCK.prev_hash)
+            prev_hash = str(hashlib.sha256(str_to_be_hashed.encode()).hexdigest())
         op = QUEUE.get()
         # Calculate nonce
-        h = ""
+        h = "----"
         nonce = 0
+        nonce_str = str(op) + str(nonce)
+        h = str(hashlib.sha256(nonce_str.encode()).hexdigest())
         while h[-1] != '0' and h[-1] != '1' and h[-1] != '2': 
+            nonce += 1
             nonce_str = str(op) + str(nonce)
             h = str(hashlib.sha256(nonce_str.encode()).hexdigest())
+        
         myVal = Block(prev_hash=prev_hash, nonce=nonce, op=op)
 
     for i in range(len(CONNECTION_SOCKS)):
         message = p.dumps(("Accept", bal, myVal))
         CONNECTION_SOCKS[SERVER_NUMS[i]].sendall(message)
+
+def accepted(b, v):
+    global CONNECTION_SOCKS
+    print("In Accepted")
+    message = p.dumps(("Accepted", b, v))
+    for num in SERVER_NUMS:
+        CONNECTION_SOCKS[num].sendall(message)
+
+def dict_exec(block):
+    op = block.operation.op
+    key = block.operation.key
+    if op == "put":
+        value = block.operation.value
+        KEY_VALUE_STORE[key] = value
+        return value
+    else:
+        if key in KEY_VALUE_STORE:
+            return KEY_VALUE_STORE[key]
+        else:
+            return "DOES NOT EXIST"
+
         
 def str_to_tuple(s):
     arr = re.search("\((.*)\)", s).group(1)
@@ -136,7 +170,7 @@ def str_to_tuple(s):
 
 # handle recvs
 def handle_recvs(stream, addr):
-    global BALLOT_COUNTS, SERVER_ID
+    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT
     while True:
         try:
             data = stream.recv(4096)
@@ -157,20 +191,58 @@ def handle_recvs(stream, addr):
                     BALLOT_COUNTS[bal] = 2
                     BALLOT_BV[bal] = ((0,0,0), None)
                     # ther is any v not null, set Ballot_BV to (b, v) with highest b
-                    if v != (None, None, None):
+                    if v is not None:
                         BALLOT_BV[bal] = (b, v)
                 elif BALLOT_COUNTS[bal] == 2:
                     BALLOT_COUNTS[bal] = BALLOT_COUNTS[bal] + 1
                     print("GOT MAJORITY")
+                    # set leader to self
+                    LEADER_HINT = SERVER_ID
 
                     # check if any v is not null and check if recevied b is higher than current b
-                    if v != (None, None, None) and b > BALLOT_BV[bal][0]:
+                    if v is not None and b > BALLOT_BV[bal][0]:
                         BALLOT_BV[bal] = (b, v)
 
                     # Send accept message
                     accept(bal, BALLOT_BV[bal][1])
+                elif BALLOT_COUNTS[bal] == 4:
+                    print("GOT ALL")
+                    del BALLOT_COUNTS[bal]
+                    del BALLOT_BV[bal]
+                else:
+                    BALLOT_COUNTS[bal] = BALLOT_COUNTS[bal] + 1
             elif data_tuple[0] == "Accept":
-                print("RECEVIED ACCEPT")
+                b = data_tuple[1]
+                v = data_tuple[2]
+                # set to leader to proposer's id
+                LEADER_HINT = b[2]
+                if b > BALLOT_NUM:
+                    ACCEPT_NUM = b
+                    ACCEPT_BLOCK = v
+                accepted(b, v)
+            elif data_tuple[0] == "Accepted":
+                b = data_tuple[1]
+                v = data_tuple[2]
+                if b not in ACCEPTED_COUNTS:
+                    ACCEPTED_COUNTS[b] = 2
+                elif ACCEPTED_COUNTS[b] == 2:
+                    print("MAJORITY ACCEPTED")
+                    ACCEPTED_COUNTS[b] = ACCEPTED_COUNTS[b] + 1
+                    # append to blockchain
+                    BLOCKCHAIN.append_block(v)
+                    # add to dict
+                    dict_exec(v)
+                    # save to file
+                    BLOCKCHAIN.save(SERVER_ID)
+                    # send decision to client
+                elif ACCEPTED_COUNTS[b] == 4:
+                    print("ALL ACCEPTED IN PROPOSER")
+                    del ACCEPTED_COUNTS[b]
+                elif ACCEPTED_COUNTS[b] == 3 and LEADER_HINT != SERVER_ID:
+                    print("ALL ACCEPTED IN ACCEPTOR")
+                    del ACCEPTED_COUNTS[b]
+                else:
+                    ACCEPTED_COUNTS[b] = ACCEPTED_COUNTS[b] + 1
             elif data_tuple[0] == "Operation":
                 stream.sendall("received in server {}".format(SERVER_ID).encode())
                 opArr = re.search("Operation\((.*)\)", data_tuple[1]).group(1).split(',')
@@ -216,7 +288,8 @@ if __name__ == '__main__':
     # DEPTH = 0
     BALLOT_NUM = (0, 0, SERVER_ID)
     # LATEST_BALLOT = (0, 0, 0)
-    ACCEPT_BLOCK = Block()
+
+    LEADER_HINT = 0
 
     threading.Thread(target=listen).start()
 

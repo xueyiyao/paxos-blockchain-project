@@ -61,12 +61,18 @@ class Block:
             self._operation = op
         else:
             self._operation = Operation(op_op, op_key, op_value)
-        self._nonce = None
+        self._nonce = nonce
         self.next = None
         self.prev = None
 
     def __str__(self):
         return "Previous Hash: {}\nOperation: {}\nNonce: {}\n".format(self._prev_hash, self._operation, self._nonce)
+
+    def empty(self):
+        if self._operation == None or self._operation.op == None:
+            return True
+        else:
+            return False
 
     # prev_hash attribute
     @property
@@ -127,6 +133,16 @@ class Blockchain:
         PREV_BLOCK.next = NEW_BLOCK
         NEW_BLOCK.prev = PREV_BLOCK
         self.tail = NEW_BLOCK
+
+    def append_block(self, block):
+        if self.head is None:
+            self.head = block
+            self.tail = block
+            return
+        PREV_BLOCK = self.tail
+        PREV_BLOCK.next = block
+        block.prev = PREV_BLOCK
+        self.tail = block
 
 
     def save(self, server_id):
