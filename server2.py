@@ -43,6 +43,9 @@ LATEST_BALLOT = None
 
 LEADER_HINT = None
 
+CLIENT_STREAM = {}
+CLIENT_SOCKETS = {}
+
 def do_exit():
     global LISTEN_SOCK, CONNECTION_SOCKS, SERVER_NUMS
     LISTEN_SOCK.close()
@@ -126,7 +129,11 @@ def accept(bal, myVal):
         if PREV_BLOCK is not None:
             str_to_be_hashed = str(PREV_BLOCK.operation) + str(PREV_BLOCK.nonce) + str(PREV_BLOCK.prev_hash)
             prev_hash = str(hashlib.sha256(str_to_be_hashed.encode()).hexdigest())
-        op = QUEUE.get()
+        operation = QUEUE.get()
+        op = operation[0]
+        client = operation[1]
+        CLIENT_STREAM[bal] = CLIENT_SOCKETS[client]
+
         # Calculate nonce
         h = "----"
         nonce = 0
@@ -140,7 +147,7 @@ def accept(bal, myVal):
         myVal = Block(prev_hash=prev_hash, nonce=nonce, op=op)
 
     for i in range(len(CONNECTION_SOCKS)):
-        message = p.dumps(("Accept", bal, myVal))
+        message = p.dumps(("Accept", bal, myVal, client))
         CONNECTION_SOCKS[SERVER_NUMS[i]].sendall(message)
 
 def accepted(b, v):
@@ -170,7 +177,7 @@ def str_to_tuple(s):
 
 # handle recvs
 def handle_recvs(stream, addr):
-    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT
+    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT, CLIENT_SOCKETS, CLIENT_STREAM
     while True:
         try:
             data = stream.recv(4096)
@@ -214,6 +221,8 @@ def handle_recvs(stream, addr):
             elif data_tuple[0] == "Accept":
                 b = data_tuple[1]
                 v = data_tuple[2]
+                client = data_tuple[3]
+                CLIENT_STREAM[b] = CLIENT_SOCKETS[client]
                 # set to leader to proposer's id
                 LEADER_HINT = b[2]
                 if b > BALLOT_NUM:
@@ -231,10 +240,12 @@ def handle_recvs(stream, addr):
                     # append to blockchain
                     BLOCKCHAIN.append_block(v)
                     # add to dict
-                    dict_exec(v)
+                    res = dict_exec(v)
                     # save to file
                     BLOCKCHAIN.save(SERVER_ID)
                     # send decision to client
+                    CLIENT_STREAM[b].sendall(str(res).encode())
+                    del CLIENT_STREAM[b]
                 elif ACCEPTED_COUNTS[b] == 4:
                     print("ALL ACCEPTED IN PROPOSER")
                     del ACCEPTED_COUNTS[b]
@@ -244,12 +255,16 @@ def handle_recvs(stream, addr):
                 else:
                     ACCEPTED_COUNTS[b] = ACCEPTED_COUNTS[b] + 1
             elif data_tuple[0] == "Operation":
+                # CLIENT_STREAM = stream
                 stream.sendall("received in server {}".format(SERVER_ID).encode())
                 opArr = re.search("Operation\((.*)\)", data_tuple[1]).group(1).split(',')
                 op = Operation(opArr[0], opArr[1], opArr[2]) if opArr[0] == "put" else Operation(opArr[0], opArr[1])
                 
-                QUEUE.put(op)
+                QUEUE.put((op, data_tuple[2]))
                 prepare()
+            elif data_tuple[0] == "client":
+                CLIENT_SOCKETS[data_tuple[1]] = stream
+                
         except socket.error as e:
             stream.close()
             break
@@ -263,6 +278,7 @@ def listen():
         # server listening for msgs
         try: 
             stream, addr = LISTEN_SOCK.accept()
+            stream.sendall(str(SERVER_ID).encode())
             threading.Thread(target=handle_recvs, args=(stream, addr)).start()
         except KeyboardInterrupt:
             do_exit()
