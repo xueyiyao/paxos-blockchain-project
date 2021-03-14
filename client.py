@@ -3,6 +3,7 @@ import sys
 import threading
 import os
 import random
+import pickle
 
 global SERVER_PORTS, SERVER_SOCKETS, SERVER_SOCKET, LEADER_HINT
 SERVER_PORTS = {
@@ -12,6 +13,11 @@ SERVER_PORTS = {
     4: 5004,
     5: 5005
 }
+CLIENT_PORTS = {
+    1: 5006, 
+    2: 5007
+}
+CLIENT_ID = sys.argv[1]
 SERVER_SOCKETS = []
 SERVER_SOCKET = None
 LEADER_HINT = None
@@ -27,8 +33,10 @@ LEADER_HINT = None
 
 def connect_server(server_id):
     global SERVER_SOCKET
-    SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[server_id]))
+    for i in range(1,6):
+        SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[i]))
+        SERVER_SOCKETS.append(SERVER_SOCKET)
 
 def close_connection():
     global SERVER_SOCKET
@@ -51,13 +59,15 @@ def handle_inputs():
                 close_connection()
             elif "Operation" in line:
                 if LEADER_HINT is None:
-                    temp = random.randint(1,5)
-                    temp = 5
-                    connect_server(temp)
-                    SERVER_SOCKET.sendall(line.encode())
+                    temp = random.randint(0,4)
+                    temp = 4
+                    # connect_server(temp)
+                    SERVER_SOCKET = SERVER_SOCKETS[4]
+                    SERVER_SOCKET.sendall(pickle.dumps(("Operation", line, CLIENT_ID)))
                     message_recv = SERVER_SOCKET.recv(1024).decode()
-                    print(message_recv)
-                    close_connection()
+                    if message_recv != "\n": 
+                        print(message_recv)
+                    # close_connection()
                 else:
                     pass
                     #send to server
@@ -71,12 +81,12 @@ def handle_recv():
         global SERVER_SOCKETS
         try: 
             pass
-            # word1 = SERVER_SOCKETS[0].recv(1024).decode()
-            # word2 = SERVER_SOCKETS[1].recv(1024).decode()
-            # word3 = SERVER_SOCKETS[2].recv(1024).decode()
-            # word4 = SERVER_SOCKETS[3].recv(1024).decode()
-            # word5 = SERVER_SOCKETS[4].recv(1024).decode()
-            # print(word1, word2, word3, word4, word5)
+            word1 = SERVER_SOCKETS[0].recv(1024).decode()
+            word2 = SERVER_SOCKETS[1].recv(1024).decode()
+            word3 = SERVER_SOCKETS[2].recv(1024).decode()
+            word4 = SERVER_SOCKETS[3].recv(1024).decode()
+            word5 = SERVER_SOCKETS[4].recv(1024).decode()
+            print(word1, word2, word3, word4, word5)
         except KeyboardInterrupt:
             # do_exit(SERVER_SOCKETS[0], SERVER_SOCKETS[1], SERVER_SOCKETS[2], SERVER_SOCKETS[3], SERVER_SOCKETS[4])
             close_connection()
@@ -86,6 +96,12 @@ if __name__ == '__main__':
     #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     #     SERVER_SOCKETS.append(sock)
     #     SERVER_SOCKETS[i].connect((socket.gethostname(), SERVER_PORTS[i+1]))
+
+    for i in range(1,6):
+        SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[i]))
+        SERVER_SOCKET.sendall(pickle.dumps(("client", CLIENT_ID)))
+        SERVER_SOCKETS.append(SERVER_SOCKET)
 
     threading.Thread(target=handle_inputs, args=()).start()
     handle_recv()
