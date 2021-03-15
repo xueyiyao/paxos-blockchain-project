@@ -57,6 +57,8 @@ def do_exit():
     LISTEN_SOCK.close()
     for num in SERVER_NUMS:
         CONNECTION_SOCKS[num].close()
+    for client in CLIENT_SOCKETS:
+        CLIENT_SOCKETS[client].close()
     os._exit(0)
 
 # handle inputs
@@ -96,7 +98,23 @@ def handle_inputs():
                     print("link is incorrect")
             elif ('failProcess' in line):
                 # notify all other servers that process is failed
+                print("failing process {}".format(SERVER_ID))
+                message = p.dumps(("failProcess", SERVER_ID))
+                client_message = 'failProcess{}'.format(SERVER_ID)
+                for num in SERVER_NUMS:
+                    CONNECTION_SOCKS[num].sendall(message)
+                for client in CLIENT_SOCKETS:
+                    CLIENT_SOCKETS[client].sendall(client_message.encode())
                 do_exit()
+            elif ('reconnect' in line):
+                # send message to other servers to reconnect 
+                print("connecting to other servers")
+                for num in SERVER_NUMS:
+                    CONNECTION_SOCKS[num].connect((socket.gethostname(), PORTS[num]))
+                    message = p.dumps(("reconnect", SERVER_ID))
+                    CONNECTION_SOCKS[num].sendall(message)
+                    SERVER_LINKS[num] = True
+                print("connected to other servers")
             elif (line_split[0] == 'state'):
                 print(BALLOT_BV)
                 print(CLIENT_STREAM)
@@ -332,6 +350,15 @@ def handle_recvs(stream, addr):
                 fixed_link = data_tuple[1]
                 SERVER_LINKS[fixed_link] = True
                 print(fixed_link, "fixed")
+            elif 'failProcess' == data_tuple[0]:
+                CONNECTION_SOCKS[data_tuple[1]].close()
+                del CONNECTION_SOCKS[data_tuple[1]]
+                SERVER_NUMS.remove(data_tuple[1])
+            elif 'reconnect' == data_tuple[0]:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                CONNECTION_SOCKS[data_tuple[1]] = sock
+                CONNECTION_SOCKS[data_tuple[1]].connect((socket.gethostname(), PORTS[data_tuple[1]]))
+                SERVER_NUMS.append(data_tuple[1])
  
         except socket.error as e:
             stream.close()
