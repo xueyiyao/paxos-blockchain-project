@@ -6,6 +6,7 @@ import re
 import ast
 import hashlib
 import pickle as p
+import time
 from queue import Queue
 from blockchain import Blockchain, Block, Operation
 
@@ -13,6 +14,7 @@ global PORTS, SERVER_NUMS
 global SERVER_ID, SERVER_PORT
 global LISTEN_SOCK, CONNECTION_SOCKS
 global SEQ_NUM, DEPTH, LATEST_BALLOT, LEADER_HINT
+global MUTEX
 
 PORTS = {
     1: 5001, 
@@ -46,6 +48,10 @@ LEADER_HINT = None
 CLIENT_STREAM = {}
 CLIENT_SOCKETS = {}
 
+SERVER_LINKS = {}
+
+MUTEX = threading.Lock()
+
 def do_exit():
     global LISTEN_SOCK, CONNECTION_SOCKS, SERVER_NUMS
     LISTEN_SOCK.close()
@@ -64,29 +70,52 @@ def handle_inputs():
                 print("connecting to other servers")
                 for i in range(len(SERVER_NUMS)):
                     CONNECTION_SOCKS[SERVER_NUMS[i]].connect((socket.gethostname(), PORTS[SERVER_NUMS[i]]))
+                    SERVER_LINKS[SERVER_NUMS[i]] = True
                 print("connected to other servers")
-            elif (line == 'w'):
-                print("writing to other servers")
-                for i in range(len(SERVER_NUMS)):
-                    CONNECTION_SOCKS[SERVER_NUMS[i]].sendall('test'.encode())
-            elif (line_split[0] == 'blockchain'):
-                op_op = line_split[1]
-                op_key = line_split[2]
-                op_value = line_split[3] if (len(line_split) > 3) else None
-                BLOCKCHAIN.append(op_op, op_key, op_value, 'nonce_stub')
-                BLOCKCHAIN.save(SERVER_ID)
-                print(BLOCKCHAIN)
             elif (line_split[0] == 'load'):
                 BLOCKCHAIN.load(SERVER_ID)
                 print(BLOCKCHAIN)
-            elif (line_split[0] == 'p'):
+            elif (line_split[0] == 'printBlockchain'):
                 print(BLOCKCHAIN)
+            elif (line_split[0] == 'printKVStore'):
                 print("STORE:", KEY_VALUE_STORE)
+            elif (line_split[0] == 'printQueue'):
+                print(QUEUE)
+            elif ('failLink' in line):
+                # failLink(src,dest)
+                links = re.search("failLink\((.*)\)", line).group(1).split(",")
+                if int(links[0]) == SERVER_ID and int(links[1]) != SERVER_ID:
+                    failLink(links[0], links[1])
+                else:
+                    print("link is incorrect")
+            elif ('fixLink' in line): 
+                links = re.search("fixLink\((.*)\)", line).group(1).split(",")
+                if int(links[0]) == SERVER_ID and int(links[1]) != SERVER_ID:
+                    fixLink(links[0], links[1])
+                else:
+                    print("link is incorrect")
+            elif ('failProcess' in line):
+                # notify all other servers that process is failed
+                do_exit()
+            elif (line_split[0] == 'state'):
+                print(BALLOT_BV)
+                print(CLIENT_STREAM)
             elif (line == 'e'):
                 do_exit()
         except EOFError:
             pass
 
+def failLink(src, dest):
+    print("in failLink")
+    SERVER_LINKS[int(dest)] = False
+    message = ('failLink', SERVER_ID)
+    CONNECTION_SOCKS[int(dest)].sendall(p.dumps(message))
+
+def fixLink(src, dest):
+    print("in fixLink")
+    SERVER_LINKS[int(dest)] = True
+    message = ('fixLink', SERVER_ID)
+    CONNECTION_SOCKS[int(dest)].sendall(p.dumps(message))
 
 #####PAXOS#####
 global BALLOT_COUNTS, ACCEPT_NUM, ACCEPT_BLOCK
@@ -106,9 +135,11 @@ ACCEPTED_COUNTS = {}
 def prepare():
     global CONNECTION_SOCKS, BALLOT_NUM
     print("In Prepare")
+    BALLOT_NUM = (BALLOT_NUM[0], BALLOT_NUM[1]+1, BALLOT_NUM[2])
     for num in SERVER_NUMS:
         message = p.dumps(("Prepare", BALLOT_NUM))
-        CONNECTION_SOCKS[num].sendall(message)
+        if SERVER_LINKS[num] == True:
+            CONNECTION_SOCKS[num].sendall(message)
 
 def promise(bal):
     global BALLOT_NUM, CONNECTION_SOCKS
@@ -117,7 +148,8 @@ def promise(bal):
         BALLOT_NUM = bal
     message = p.dumps(("Promise", bal, ACCEPT_NUM, ACCEPT_BLOCK))
     server_id = bal[2]
-    CONNECTION_SOCKS[server_id].sendall(message)
+    if SERVER_LINKS[server_id] == True:
+        CONNECTION_SOCKS[server_id].sendall(message)
 
 ###PHASE 2###
 def accept(bal, myVal):
@@ -146,16 +178,19 @@ def accept(bal, myVal):
         
         myVal = Block(prev_hash=prev_hash, nonce=nonce, op=op)
 
-    for i in range(len(CONNECTION_SOCKS)):
+    for num in SERVER_NUMS:
         message = p.dumps(("Accept", bal, myVal, client))
-        CONNECTION_SOCKS[SERVER_NUMS[i]].sendall(message)
+        if SERVER_LINKS[num] == True:
+            CONNECTION_SOCKS[num].sendall(message)
 
-def accepted(b, v):
+def accepted(b, v, client):
     global CONNECTION_SOCKS
     print("In Accepted")
-    message = p.dumps(("Accepted", b, v))
+    message = p.dumps(("Accepted", b, v, client))
+    time.sleep(1)
     for num in SERVER_NUMS:
-        CONNECTION_SOCKS[num].sendall(message)
+        if SERVER_LINKS[num] == True:
+            CONNECTION_SOCKS[num].sendall(message)
 
 def dict_exec(block):
     op = block.operation.op
@@ -177,7 +212,7 @@ def str_to_tuple(s):
 
 # handle recvs
 def handle_recvs(stream, addr):
-    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT, CLIENT_SOCKETS, CLIENT_STREAM
+    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT, CLIENT_SOCKETS, CLIENT_STREAM, BALLOT_NUM, MUTEX
     while True:
         try:
             data = stream.recv(4096)
@@ -214,6 +249,7 @@ def handle_recvs(stream, addr):
                     accept(bal, BALLOT_BV[bal][1])
                 elif BALLOT_COUNTS[bal] == 4:
                     print("GOT ALL")
+                    time.sleep(1)
                     del BALLOT_COUNTS[bal]
                     del BALLOT_BV[bal]
                 else:
@@ -222,29 +258,39 @@ def handle_recvs(stream, addr):
                 b = data_tuple[1]
                 v = data_tuple[2]
                 client = data_tuple[3]
-                CLIENT_STREAM[b] = CLIENT_SOCKETS[client]
+                # CLIENT_STREAM[b] = CLIENT_SOCKETS[client]
                 # set to leader to proposer's id
                 LEADER_HINT = b[2]
-                if b > BALLOT_NUM:
+                print("ACCEPT: ", b, BALLOT_NUM)
+                if b >= BALLOT_NUM:
                     ACCEPT_NUM = b
                     ACCEPT_BLOCK = v
-                accepted(b, v)
+                    accepted(b, v, client)
             elif data_tuple[0] == "Accepted":
                 b = data_tuple[1]
                 v = data_tuple[2]
+                client = data_tuple[3]
+                MUTEX.acquire()
                 if b not in ACCEPTED_COUNTS:
                     ACCEPTED_COUNTS[b] = 2
+                    print(ACCEPTED_COUNTS[b])
+                    CLIENT_STREAM[b] = CLIENT_SOCKETS[client]
                 elif ACCEPTED_COUNTS[b] == 2:
                     print("MAJORITY ACCEPTED")
                     ACCEPTED_COUNTS[b] = ACCEPTED_COUNTS[b] + 1
+                    print(ACCEPTED_COUNTS[b])
                     # append to blockchain
                     BLOCKCHAIN.append_block(v)
+                    # increment depth
+                    BALLOT_NUM = (BALLOT_NUM[0]+1, BALLOT_NUM[1], BALLOT_NUM[2])
                     # add to dict
                     res = dict_exec(v)
                     # save to file
                     BLOCKCHAIN.save(SERVER_ID)
                     # send decision to client
-                    CLIENT_STREAM[b].sendall(str(res).encode())
+                    decision = "{},{}".format(res, LEADER_HINT)
+                    CLIENT_STREAM[b].sendall(decision.encode())
+                    # time.sleep(1)
                     del CLIENT_STREAM[b]
                 elif ACCEPTED_COUNTS[b] == 4:
                     print("ALL ACCEPTED IN PROPOSER")
@@ -254,17 +300,35 @@ def handle_recvs(stream, addr):
                     del ACCEPTED_COUNTS[b]
                 else:
                     ACCEPTED_COUNTS[b] = ACCEPTED_COUNTS[b] + 1
+                MUTEX.release()
             elif data_tuple[0] == "Operation":
-                # CLIENT_STREAM = stream
-                stream.sendall("received in server {}".format(SERVER_ID).encode())
                 opArr = re.search("Operation\((.*)\)", data_tuple[1]).group(1).split(',')
                 op = Operation(opArr[0], opArr[1], opArr[2]) if opArr[0] == "put" else Operation(opArr[0], opArr[1])
                 
-                QUEUE.put((op, data_tuple[2]))
-                prepare()
+                if LEADER_HINT == 0:
+                    print("No Leader elected, call prepare()")
+                    QUEUE.put((op, data_tuple[2]))
+                    prepare()
+                elif LEADER_HINT == SERVER_ID:
+                    print("I am the leader")
+                    QUEUE.put((op, data_tuple[2]))
+                    accept(BALLOT_NUM, None)
+                elif LEADER_HINT != SERVER_ID:
+                    # forward to correct leader
+                    print("Not the leader, sending to correct leader")
+                    if SERVER_LINKS[LEADER_HINT] == True:
+                        CONNECTION_SOCKS[LEADER_HINT].sendall(p.dumps(data_tuple))
             elif data_tuple[0] == "client":
                 CLIENT_SOCKETS[data_tuple[1]] = stream
-                
+            elif 'failLink' == data_tuple[0]:
+                failed_link = data_tuple[1]
+                SERVER_LINKS[failed_link] = False
+                print(failed_link, "failed")
+            elif 'fixLink' == data_tuple[0]:
+                fixed_link = data_tuple[1]
+                SERVER_LINKS[fixed_link] = True
+                print(fixed_link, "fixed")
+ 
         except socket.error as e:
             stream.close()
             break
@@ -278,7 +342,6 @@ def listen():
         # server listening for msgs
         try: 
             stream, addr = LISTEN_SOCK.accept()
-            stream.sendall(str(SERVER_ID).encode())
             threading.Thread(target=handle_recvs, args=(stream, addr)).start()
         except KeyboardInterrupt:
             do_exit()
