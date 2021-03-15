@@ -52,8 +52,8 @@ def time_out(duration, line):
     if RECEIVED == False: 
         print("not received")
         # random server that is not the failed leader (LEADER_HINT)
-        print(FAULTY_LEADERS)
         FAULTY_LEADERS.append(LEADER_HINT)
+        print(FAULTY_LEADERS)
         if len(FAULTY_LEADERS) >= 3:
             print("majority of leaders faulty")
         else:
@@ -62,6 +62,7 @@ def time_out(duration, line):
             # resend operation
             RECEIVED = False
             print("resending operation")
+            SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
             SERVER_SOCKET.sendall(p.dumps(("Operation", line, CLIENT_ID)))
             timeout_thread = threading.Thread(target=time_out, args=(5.0,line))
             timeout_thread.start()
@@ -84,11 +85,11 @@ def handle_inputs():
             elif "Operation" in line:
                 if LEADER_HINT is None:
                     temp = random.randint(0,4)
-                    LEADER_HINT = temp
                     if int(CLIENT_ID) == 1:
                         temp = 0
                     else: 
                         temp = 3
+                    LEADER_HINT = temp
                     # connect_server(temp)
                     print("sending to {}".format(temp))
                     SERVER_SOCKET = SERVER_SOCKETS[temp]
@@ -124,38 +125,52 @@ def handle_inputs():
         except EOFError:
             pass
 
+def recv_server(server):
+    global SERVER_SOCKETS, RECEIVED, LEADER_HINT
+    while True:
+        word = SERVER_SOCKETS[server].recv(4096).decode()
+        if word != "":
+            RECEIVED = True
+            print("{}: {}".format(server+1, word))
+            if word[2] != "" and int(word[2]) != LEADER_HINT and int(word[2]) != 0:
+                LEADER_HINT = int(word[2])
+
 def handle_recv():
-    while True: 
-        # server listening for msgs
-        global SERVER_SOCKETS, LEADER_HINT, RECEIVED
-        try: 
-            word1 = SERVER_SOCKETS[0].recv(4096).decode()
-            word2 = SERVER_SOCKETS[1].recv(4096).decode()
-            word3 = SERVER_SOCKETS[2].recv(4096).decode()
-            word4 = SERVER_SOCKETS[3].recv(4096).decode()
-            word5 = SERVER_SOCKETS[4].recv(4096).decode()
-            if word1 != "" or word2 != "" or word3 != "" or word4 != "" or word5 != "":
-                RECEIVED = True
-                print("word1: ", word1)
-                print("word2: ", word2)
-                print("word3: ", word3)
-                print("word4: ", word4)
-                print("word5: ", word5)
-                if word1[2] != "" and int(word1[2]) != LEADER_HINT and int(word1[2]) != 0:
-                    LEADER_HINT = int(word1[2])
-                if word2[2] != "" and int(word2[2]) != LEADER_HINT and int(word2[2]) != 0:
-                    LEADER_HINT = int(word2[2])
-                if word3[2] != "" and int(word3[2]) != LEADER_HINT and int(word3[2]) != 0:
-                    LEADER_HINT = int(word3[2])
-                if word4[2] != "" and int(word4[2]) != LEADER_HINT and int(word4[2]) != 0:
-                    LEADER_HINT = int(word4[2])
-                if word5[2] != "" and int(word5[2]) != LEADER_HINT and int(word5[2]) != 0:
-                    LEADER_HINT = int(word5[2])
-        except (socket.timeout, KeyboardInterrupt) as error:
-            # do_exit(SERVER_SOCKETS[0], SERVER_SOCKETS[1], SERVER_SOCKETS[2], SERVER_SOCKETS[3], SERVER_SOCKETS[4])
-            print(error)
-            if error != "timed out":
-                close_connection()
+    # server listening for msgs
+    global SERVER_SOCKETS, LEADER_HINT, RECEIVED
+    try: 
+        # word1 = SERVER_SOCKETS[0].recv(4096).decode()
+        # word2 = SERVER_SOCKETS[1].recv(4096).decode()
+        # word3 = SERVER_SOCKETS[2].recv(4096).decode()
+        # word4 = SERVER_SOCKETS[3].recv(4096).decode()
+        # word5 = SERVER_SOCKETS[4].recv(4096).decode()
+        threading.Thread(target=recv_server, args=(0,)).start()
+        threading.Thread(target=recv_server, args=(1,)).start()
+        threading.Thread(target=recv_server, args=(2,)).start()
+        threading.Thread(target=recv_server, args=(3,)).start()
+        threading.Thread(target=recv_server, args=(4,)).start()
+        # if word1 != "" or word2 != "" or word3 != "" or word4 != "" or word5 != "":
+        #     RECEIVED = True
+        #     print("word1: ", word1)
+        #     print("word2: ", word2)
+        #     print("word3: ", word3)
+        #     print("word4: ", word4)
+        #     print("word5: ", word5)
+        #     if word1[2] != "" and int(word1[2]) != LEADER_HINT and int(word1[2]) != 0:
+        #         LEADER_HINT = int(word1[2])
+        #     if word2[2] != "" and int(word2[2]) != LEADER_HINT and int(word2[2]) != 0:
+        #         LEADER_HINT = int(word2[2])
+        #     if word3[2] != "" and int(word3[2]) != LEADER_HINT and int(word3[2]) != 0:
+        #         LEADER_HINT = int(word3[2])
+        #     if word4[2] != "" and int(word4[2]) != LEADER_HINT and int(word4[2]) != 0:
+        #         LEADER_HINT = int(word4[2])
+        #     if word5[2] != "" and int(word5[2]) != LEADER_HINT and int(word5[2]) != 0:
+        #         LEADER_HINT = int(word5[2])
+    except (socket.timeout, KeyboardInterrupt) as error:
+        # do_exit(SERVER_SOCKETS[0], SERVER_SOCKETS[1], SERVER_SOCKETS[2], SERVER_SOCKETS[3], SERVER_SOCKETS[4])
+        print(error)
+        if error != "timed out":
+            close_connection()
 
 if __name__ == '__main__':
     # for i in range(5):

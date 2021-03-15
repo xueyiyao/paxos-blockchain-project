@@ -135,7 +135,7 @@ ACCEPTED_COUNTS = {}
 def prepare():
     global CONNECTION_SOCKS, BALLOT_NUM
     print("In Prepare")
-    BALLOT_NUM = (BALLOT_NUM[0], BALLOT_NUM[1]+1, BALLOT_NUM[2])
+    BALLOT_NUM = (BALLOT_NUM[0], BALLOT_NUM[1]+1, SERVER_ID)
     for num in SERVER_NUMS:
         message = p.dumps(("Prepare", BALLOT_NUM))
         if SERVER_LINKS[num] == True:
@@ -315,9 +315,13 @@ def handle_recvs(stream, addr):
                     accept(BALLOT_NUM, None)
                 elif LEADER_HINT != SERVER_ID:
                     # forward to correct leader
-                    print("Not the leader, sending to correct leader")
                     if SERVER_LINKS[LEADER_HINT] == True:
+                        print("Not the leader, sending to correct leader")
                         CONNECTION_SOCKS[LEADER_HINT].sendall(p.dumps(data_tuple))
+                    else: 
+                        print("Connection with leader broken, reelecting leader")
+                        QUEUE.put((op, data_tuple[2]))
+                        prepare()
             elif data_tuple[0] == "client":
                 CLIENT_SOCKETS[data_tuple[1]] = stream
             elif 'failLink' == data_tuple[0]:
