@@ -116,6 +116,11 @@ def handle_inputs():
                     CONNECTION_SOCKS[num].sendall(message)
                     SERVER_LINKS[num] = True
                 print("connected to other servers")
+                BLOCKCHAIN.load(SERVER_ID)
+                temp = BLOCKCHAIN.head
+                while temp != None:
+                    dict_exec(temp)
+                    temp = temp.next
             elif (line_split[0] == 'state'):
                 print(BALLOT_BV)
                 print(CLIENT_STREAM)
