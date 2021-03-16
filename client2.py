@@ -118,9 +118,9 @@ def recv_server(server):
             if word != "" and 'failProcess' not in word:
                 RECEIVED = True
                 print("{}: {}".format(server, word))
-                if word[2] != "" and "DOES NOT EXIST" not in word and int(word[2]) != LEADER_HINT and int(word[2]) != 0:
-                    print("setting LEADER_HINT to {}".format(int(word[2])))
-                    LEADER_HINT = int(word[2])
+                if word[-1] != "" and "DOES NOT EXIST" not in word and int(word[-1]) != LEADER_HINT and int(word[-1]) != 0:
+                    print("setting LEADER_HINT to {}".format(int(word[-1])))
+                    LEADER_HINT = int(word[-1])
             elif 'failProcess' in word:
                 print("in failProcess")
                 # server id, subtract 1 to get array index from SERVER_SOCKETS
