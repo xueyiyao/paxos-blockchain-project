@@ -154,20 +154,23 @@ def prepare():
     global CONNECTION_SOCKS, BALLOT_NUM
     print("In Prepare")
     BALLOT_NUM = (BALLOT_NUM[0], BALLOT_NUM[1]+1, SERVER_ID)
+    message = p.dumps(("Prepare", BALLOT_NUM))
+    time.sleep(3.0)
     for num in SERVER_NUMS:
-        message = p.dumps(("Prepare", BALLOT_NUM))
         if SERVER_LINKS[num] == True:
             CONNECTION_SOCKS[num].sendall(message)
 
 def promise(bal):
     global BALLOT_NUM, CONNECTION_SOCKS
     print("In Promise")
+    # if bal[2] == SERVER_ID:
     if bal > BALLOT_NUM:
         BALLOT_NUM = bal
-    message = p.dumps(("Promise", bal, ACCEPT_NUM, ACCEPT_BLOCK))
-    server_id = bal[2]
-    if SERVER_LINKS[server_id] == True:
-        CONNECTION_SOCKS[server_id].sendall(message)
+        message = p.dumps(("Promise", bal, ACCEPT_NUM, ACCEPT_BLOCK))
+        server_id = bal[2]
+        time.sleep(3.0)
+        if server_id in SERVER_LINKS and SERVER_LINKS[server_id] == True:
+            CONNECTION_SOCKS[server_id].sendall(message)
 
 ###PHASE 2###
 def accept(bal, myVal):
@@ -196,8 +199,9 @@ def accept(bal, myVal):
         
         myVal = Block(prev_hash=prev_hash, nonce=nonce, op=op)
 
+    message = p.dumps(("Accept", bal, myVal, client))
+    time.sleep(3.0)
     for num in SERVER_NUMS:
-        message = p.dumps(("Accept", bal, myVal, client))
         if SERVER_LINKS[num] == True:
             CONNECTION_SOCKS[num].sendall(message)
 
@@ -205,7 +209,7 @@ def accepted(b, v, client):
     global CONNECTION_SOCKS
     print("In Accepted")
     message = p.dumps(("Accepted", b, v, client))
-    time.sleep(1)
+    time.sleep(3.0)
     for num in SERVER_NUMS:
         if SERVER_LINKS[num] == True:
             CONNECTION_SOCKS[num].sendall(message)
@@ -223,11 +227,6 @@ def dict_exec(block):
         else:
             return "DOES NOT EXIST"
 
-        
-def str_to_tuple(s):
-    arr = re.search("\((.*)\)", s).group(1)
-    return eval(arr)
-
 # handle recvs
 def handle_recvs(stream, addr):
     global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT, CLIENT_SOCKETS, CLIENT_STREAM, BALLOT_NUM, MUTEX
@@ -238,7 +237,7 @@ def handle_recvs(stream, addr):
             # check for empty | will EOFError if this block not present
             if data != b'':
                 data_tuple = p.loads(data)
-                print(data_tuple)
+                print("R:", data_tuple)
 
             if data_tuple[0] == "Prepare":
                 bal = data_tuple[1]
@@ -247,6 +246,7 @@ def handle_recvs(stream, addr):
                 bal = data_tuple[1]
                 b = data_tuple[2]
                 v = data_tuple[3]
+                MUTEX.acquire()
                 if bal not in BALLOT_COUNTS:
                     BALLOT_COUNTS[bal] = 2
                     BALLOT_BV[bal] = ((0,0,0), None)
@@ -272,15 +272,16 @@ def handle_recvs(stream, addr):
                     del BALLOT_BV[bal]
                 else:
                     BALLOT_COUNTS[bal] = BALLOT_COUNTS[bal] + 1
+                MUTEX.release()
             elif data_tuple[0] == "Accept":
                 b = data_tuple[1]
                 v = data_tuple[2]
                 client = data_tuple[3]
                 # CLIENT_STREAM[b] = CLIENT_SOCKETS[client]
                 # set to leader to proposer's id
-                LEADER_HINT = b[2]
-                print("ACCEPT: ", b, BALLOT_NUM)
                 if b >= BALLOT_NUM:
+                    LEADER_HINT = b[2]
+                    print("ACCEPT: ", b, BALLOT_NUM)
                     ACCEPT_NUM = b
                     ACCEPT_BLOCK = v
                     accepted(b, v, client)
@@ -307,6 +308,7 @@ def handle_recvs(stream, addr):
                     BLOCKCHAIN.save(SERVER_ID)
                     # send decision to client
                     decision = "{},{}".format(res, LEADER_HINT)
+                    time.sleep(3.0)
                     CLIENT_STREAM[b].sendall(decision.encode())
                     # time.sleep(1)
                     del CLIENT_STREAM[b]
@@ -335,6 +337,7 @@ def handle_recvs(stream, addr):
                     # forward to correct leader
                     if SERVER_LINKS[LEADER_HINT] == True:
                         print("Not the leader, sending to correct leader")
+                        time.sleep(3.0)
                         CONNECTION_SOCKS[LEADER_HINT].sendall(p.dumps(data_tuple))
                     else: 
                         print("Connection with leader broken, reelecting leader")
