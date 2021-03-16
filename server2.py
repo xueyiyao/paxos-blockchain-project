@@ -51,6 +51,7 @@ CLIENT_SOCKETS = {}
 SERVER_LINKS = {}
 
 MUTEX = threading.Lock()
+REJECT_MUTEX = threading.Lock()
 
 def do_exit():
     global LISTEN_SOCK, CONNECTION_SOCKS, SERVER_NUMS
@@ -82,7 +83,7 @@ def handle_inputs():
             elif (line_split[0] == 'printKVStore'):
                 print("STORE:", KEY_VALUE_STORE)
             elif (line_split[0] == 'printQueue'):
-                print(QUEUE)
+                print(list(QUEUE.queue))
             elif ('failLink' in line):
                 # failLink(src,dest)
                 links = re.search("failLink\((.*)\)", line).group(1).split(",")
@@ -136,7 +137,7 @@ def fixLink(src, dest):
     CONNECTION_SOCKS[int(dest)].sendall(p.dumps(message))
 
 #####PAXOS#####
-global BALLOT_COUNTS, ACCEPT_NUM, ACCEPT_BLOCK
+global BALLOT_COUNTS, ACCEPT_NUM, ACCEPT_BLOCK, REJECT_COUNTS, IN_PAXOS
 # Counts the number of Promises received for one ballot number
 BALLOT_COUNTS = {}
 # Keep tracks of highest b and corresponding v for each bal 
@@ -148,6 +149,10 @@ ACCEPT_NUM = (None, None, None)
 ACCEPT_BLOCK = None
 
 ACCEPTED_COUNTS = {}
+
+REJECT_COUNTS = {}
+
+IN_PAXOS = False
 
 ###PHASE 1###
 def prepare():
@@ -171,6 +176,12 @@ def promise(bal):
         time.sleep(3.0)
         if server_id in SERVER_LINKS and SERVER_LINKS[server_id] == True:
             CONNECTION_SOCKS[server_id].sendall(message)
+    elif bal < BALLOT_NUM: 
+        print("Rejecting {} in Promise".format(bal))
+        message = p.dumps(("Reject", bal))
+        CONNECTION_SOCKS[bal[2]].sendall(message)
+    else: 
+        print("bal == BALLOT_NUM in promise()")
 
 ###PHASE 2###
 def accept(bal, myVal):
@@ -208,10 +219,11 @@ def accept(bal, myVal):
 def accepted(b, v, client):
     global CONNECTION_SOCKS
     print("In Accepted")
-    message = p.dumps(("Accepted", b, v, client))
+    message = p.dumps(("Accepted", b, v, client, SERVER_ID))
     time.sleep(3.0)
     for num in SERVER_NUMS:
         if SERVER_LINKS[num] == True:
+            print("Sending Accepted to {}".format(str(num)))
             CONNECTION_SOCKS[num].sendall(message)
 
 def dict_exec(block):
@@ -229,7 +241,7 @@ def dict_exec(block):
 
 # handle recvs
 def handle_recvs(stream, addr):
-    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT, CLIENT_SOCKETS, CLIENT_STREAM, BALLOT_NUM, MUTEX
+    global BALLOT_COUNTS, SERVER_ID, ACCEPTED_COUNTS, LEADER_HINT, CLIENT_SOCKETS, CLIENT_STREAM, BALLOT_NUM, MUTEX, REJECT_MUTEX, IN_PAXOS
     while True:
         try:
             data = stream.recv(4096)
@@ -312,6 +324,7 @@ def handle_recvs(stream, addr):
                     CLIENT_STREAM[b].sendall(decision.encode())
                     # time.sleep(1)
                     del CLIENT_STREAM[b]
+                    IN_PAXOS = False
                 elif ACCEPTED_COUNTS[b] == 4:
                     print("ALL ACCEPTED IN PROPOSER")
                     del ACCEPTED_COUNTS[b]
@@ -332,6 +345,9 @@ def handle_recvs(stream, addr):
                 elif LEADER_HINT == SERVER_ID:
                     print("I am the leader")
                     QUEUE.put((op, data_tuple[2]))
+                    while IN_PAXOS:
+                        pass
+                    IN_PAXOS = True
                     accept(BALLOT_NUM, None)
                 elif LEADER_HINT != SERVER_ID:
                     # forward to correct leader
@@ -343,6 +359,25 @@ def handle_recvs(stream, addr):
                         print("Connection with leader broken, reelecting leader")
                         QUEUE.put((op, data_tuple[2]))
                         prepare()
+            elif data_tuple[0] == "Reject":
+                b = data_tuple[1]
+                REJECT_MUTEX.acquire()
+                if b not in REJECT_COUNTS:
+                    REJECT_COUNTS[b] = 1
+                    print(REJECT_COUNTS[b])
+                elif REJECT_COUNTS[b] == 1:
+                    REJECT_COUNTS[b] = REJECT_COUNTS[b] + 1
+                    print(REJECT_COUNTS[b])
+                elif REJECT_COUNTS[b] == 2:
+                    # third Reject received
+                    print("RECEIVED MAJORITY REJECTS, POPPED OP FROM QUEUE")
+                    REJECT_COUNTS[b] = REJECT_COUNTS[b] + 1
+                    QUEUE.get()
+                    IN_PAXOS = False
+                elif REJECT_COUNTS[b] == 3 and LEADER_HINT != SERVER_ID:
+                    print("RECEIVED ALL REJECTS, POPPED OP FROM QUEUE")
+                    del REJECT_COUNTS[b]
+                REJECT_MUTEX.release()
             elif data_tuple[0] == "client":
                 CLIENT_SOCKETS[data_tuple[1]] = stream
             elif 'failLink' == data_tuple[0]:
@@ -354,10 +389,12 @@ def handle_recvs(stream, addr):
                 SERVER_LINKS[fixed_link] = True
                 print(fixed_link, "fixed")
             elif 'failProcess' == data_tuple[0]:
+                SERVER_LINKS[data_tuple[1]] = False
                 CONNECTION_SOCKS[data_tuple[1]].close()
                 del CONNECTION_SOCKS[data_tuple[1]]
                 SERVER_NUMS.remove(data_tuple[1])
             elif 'reconnect' == data_tuple[0]:
+                SERVER_LINKS[data_tuple[1]] = True
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 CONNECTION_SOCKS[data_tuple[1]] = sock
                 CONNECTION_SOCKS[data_tuple[1]].connect((socket.gethostname(), PORTS[data_tuple[1]]))

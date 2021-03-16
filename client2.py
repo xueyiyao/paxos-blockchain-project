@@ -16,10 +16,7 @@ SERVER_PORTS = {
     4: 5004,
     5: 5005
 }
-CLIENT_PORTS = {
-    1: 5006, 
-    2: 5007
-}
+
 CLIENT_ID = 0
 SERVER_NUMS = [1,2,3,4,5]
 SERVER_SOCKETS = {}
@@ -35,7 +32,14 @@ def close_connection():
 
 def time_out(duration, line): 
     global RECEIVED, LEADER_HINT, FAULTY_LEADERS
-    time.sleep(duration)
+    # time.sleep(duration)
+    dur = duration
+    for i in range(int(dur)):
+        time.sleep(1.0)
+        print(dur-i, RECEIVED)
+        if (RECEIVED == True):
+            print("ack")
+            break
     if RECEIVED == False: 
         print("not received")
         # random server that is not the failed leader (LEADER_HINT)
@@ -60,7 +64,7 @@ def time_out(duration, line):
 
 # handle inputs
 def handle_inputs(): 
-    global SERVER_SOCKETS, LEADER_HINT, FAULTY_LEADERS
+    global SERVER_SOCKETS, LEADER_HINT, FAULTY_LEADERS, RECEIVED
     while True: 
         try: 
             line = input()
@@ -76,10 +80,10 @@ def handle_inputs():
                     else:
                         while LEADER_HINT in FAULTY_LEADERS: 
                             LEADER_HINT = random.randint(1,5)
-                        if int(CLIENT_ID) == 1:
-                            LEADER_HINT = 3
-                        else: 
-                            LEADER_HINT = 3
+                        # if int(CLIENT_ID) == 1:
+                        #     LEADER_HINT = 1
+                        # else: 
+                        #     LEADER_HINT = 3
                         print("sending to {}".format(LEADER_HINT))
                         SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
                         RECEIVED = False
@@ -106,7 +110,7 @@ def handle_inputs():
             pass
 
 def recv_server(server):
-    global SERVER_SOCKETS, RECEIVED, LEADER_HINT
+    global SERVER_SOCKETS, RECEIVED, LEADER_HINT, FAULTY_LEADERS
     while True:
         if SERVER_SOCKETS[server] != None:
             print("checking word for server {}".format(server))
