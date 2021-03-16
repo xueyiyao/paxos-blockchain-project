@@ -348,7 +348,8 @@ def handle_recvs(stream, addr):
                     while IN_PAXOS:
                         pass
                     IN_PAXOS = True
-                    accept(BALLOT_NUM, None)
+                    NEW_BALLOT_NUM = (BALLOT_NUM[0], BALLOT_NUM[1], SERVER_ID)
+                    accept(NEW_BALLOT_NUM, None)
                 elif LEADER_HINT != SERVER_ID:
                     # forward to correct leader
                     if SERVER_LINKS[LEADER_HINT] == True:
