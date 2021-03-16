@@ -109,6 +109,10 @@ def handle_inputs():
                 do_exit()
             elif ('reconnect' in line):
                 # send message to other servers to reconnect 
+                not_include_nums = line.split(" ")
+                if len(not_include_nums) > 1:
+                    for i in range(1, len(not_include_nums)):
+                        SERVER_NUMS.remove(int(not_include_nums[i]))
                 print("connecting to other servers")
                 for num in SERVER_NUMS:
                     CONNECTION_SOCKS[num].connect((socket.gethostname(), PORTS[num]))

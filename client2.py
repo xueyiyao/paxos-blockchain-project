@@ -8,7 +8,7 @@ import pickle as p
 
 # start servers/client, client1 send operation, server1 failprocess, client1 send operation, server1 reconnect, client1 send operation, client2 send operation = not getting result from server1
 
-global SERVER_PORTS, SERVER_SOCKETS, SERVER_SOCKET, LEADER_HINT, RECEIVED
+global SERVER_PORTS, SERVER_SOCKETS, SERVER_SOCKET, LEADER_HINT, RECEIVED, FAILED_SERVERS
 SERVER_PORTS = {
     1: 5001, 
     2: 5002,
@@ -24,6 +24,7 @@ SERVER_SOCKET = None
 LEADER_HINT = None
 RECEIVED = False
 FAULTY_LEADERS = []
+FAILED_SERVERS = []
 
 def close_connection():
     global SERVER_SOCKET
@@ -64,7 +65,7 @@ def time_out(duration, line):
 
 # handle inputs
 def handle_inputs(): 
-    global SERVER_SOCKETS, LEADER_HINT, FAULTY_LEADERS, RECEIVED
+    global SERVER_SOCKETS, LEADER_HINT, FAULTY_LEADERS, RECEIVED, FAILED_SERVERS
     while True: 
         try: 
             line = input()
@@ -88,6 +89,9 @@ def handle_inputs():
                         SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
                         RECEIVED = False
                         FAULTY_LEADERS = []
+                        if len(FAILED_SERVERS) > 0: 
+                            for i in FAILED_SERVERS:
+                                FAULTY_LEADERS.append(i)
                         SERVER_SOCKET.sendall(p.dumps(("Operation", line, CLIENT_ID)))
                         # thread that sleeps for 5 seconds
                         threading.Thread(target=time_out, args=(30.0, line)).start()
@@ -97,6 +101,9 @@ def handle_inputs():
                     SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
                     RECEIVED = False
                     FAULTY_LEADERS = []
+                    if len(FAILED_SERVERS) > 0: 
+                            for i in FAILED_SERVERS:
+                                FAULTY_LEADERS.append(i)
                     SERVER_SOCKET.sendall(p.dumps(("Operation", line, CLIENT_ID)))
                     threading.Thread(target=time_out, args=(30.0, line)).start()
             elif "reconnect" in line:
@@ -110,7 +117,7 @@ def handle_inputs():
             pass
 
 def recv_server(server):
-    global SERVER_SOCKETS, RECEIVED, LEADER_HINT, FAULTY_LEADERS
+    global SERVER_SOCKETS, RECEIVED, LEADER_HINT, FAULTY_LEADERS, FAILED_SERVERS
     while True:
         if SERVER_SOCKETS[server] != None:
             print("checking word for server {}".format(server))
@@ -128,6 +135,7 @@ def recv_server(server):
                 SERVER_SOCKETS[server_index].close()
                 SERVER_SOCKETS[server_index] = None
                 FAULTY_LEADERS.append(server_index)
+                FAILED_SERVERS.append(server_index)
                 if LEADER_HINT == server_index:
                     LEADER_HINT = None
 
