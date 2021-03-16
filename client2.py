@@ -108,6 +108,7 @@ def handle_inputs():
                     threading.Thread(target=time_out, args=(30.0, line)).start()
             elif "reconnect" in line:
                 server = int(line[-1])
+                FAILED_SERVERS.remove(server)
                 print("reconnecting to server {}".format(server))
                 SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[server]))
