@@ -1,3 +1,7 @@
+'''
+server.py is now the official version! 
+This file will still work, but do not have up to date documentation nor global vars delcared in functions
+'''
 import socket
 import sys
 import threading

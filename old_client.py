@@ -8,7 +8,7 @@ import pickle as p
 
 # start servers/client, client1 send operation, server1 failprocess, client1 send operation, server1 reconnect, client1 send operation, client2 send operation = not getting result from server1
 
-global SERVER_PORTS, SERVER_SOCKETS, SERVER_SOCKET, LEADER_HINT, RECEIVED, FAILED_SERVERS
+global SERVER_PORTS, SERVER_SOCKETS, SERVER_SOCKET, LEADER_HINT, RECEIVED
 SERVER_PORTS = {
     1: 5001, 
     2: 5002,
@@ -16,18 +16,32 @@ SERVER_PORTS = {
     4: 5004,
     5: 5005
 }
-
+CLIENT_PORTS = {
+    1: 5006, 
+    2: 5007
+}
 CLIENT_ID = 0
-SERVER_NUMS = [1,2,3,4,5]
-SERVER_SOCKETS = {}
+SERVER_SOCKETS = []
 SERVER_SOCKET = None
 LEADER_HINT = None
-# Boolean to track if we have received a response
 RECEIVED = False
-# Array of possibly faulty leaders
 FAULTY_LEADERS = []
-# Array of failed servers
-FAILED_SERVERS = []
+
+# exit function to close all sockets
+# def do_exit(sock_client_server1, sock_client_server2, sock_client_server3, sock_client_server4, sock_client_server5):
+#     sock_client_server1.close()
+#     sock_client_server2.close()
+#     sock_client_server3.close()
+#     sock_client_server4.close()
+#     sock_client_server5.close()
+#     os._exit(0)
+
+# def connect_server(server_id):
+#     global SERVER_SOCKET
+#     for i in range(1,6):
+#         SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[i]))
+#         SERVER_SOCKETS.append(SERVER_SOCKET)
 
 def close_connection():
     global SERVER_SOCKET
@@ -35,15 +49,8 @@ def close_connection():
     os._exit(0)
 
 def time_out(duration, line): 
-    global SERVER_SOCKETS, CLIENT_ID, LEADER_HINT, RECEIVED, FAULTY_LEADERS
-    # time.sleep(duration)
-    dur = duration
-    for i in range(int(dur)):
-        time.sleep(1.0)
-        print(dur-i, RECEIVED)
-        if (RECEIVED == True):
-            print("ack")
-            break
+    global RECEIVED, LEADER_HINT, FAULTY_LEADERS
+    time.sleep(duration)
     if RECEIVED == False: 
         print("not received")
         # random server that is not the failed leader (LEADER_HINT)
@@ -53,14 +60,14 @@ def time_out(duration, line):
             print("majority of leaders faulty")
         else:
             while LEADER_HINT in FAULTY_LEADERS: 
-                LEADER_HINT = random.randint(1,5)
+                LEADER_HINT = random.randint(0,4)
             # resend operation
             RECEIVED = False
             print("resending operation")
             if SERVER_SOCKETS[LEADER_HINT] != None:
                 SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
                 SERVER_SOCKET.sendall(p.dumps(("Operation", line, CLIENT_ID)))
-                timeout_thread = threading.Thread(target=time_out, args=(30.0, line))
+                timeout_thread = threading.Thread(target=time_out, args=(5.0,line))
                 timeout_thread.start()
                 timeout_thread.join()
             else: 
@@ -68,7 +75,7 @@ def time_out(duration, line):
 
 # handle inputs
 def handle_inputs(): 
-    global SERVER_SOCKETS, SERVER_PORTS, CLIENT_ID, LEADER_HINT, RECEIVED, FAULTY_LEADERS, FAILED_SERVERS
+    global SERVER_SOCKETS, LEADER_HINT, FAULTY_LEADERS
     while True: 
         try: 
             line = input()
@@ -78,40 +85,33 @@ def handle_inputs():
                 close_connection()
             elif "Operation" in line:
                 if LEADER_HINT is None:
-                    LEADER_HINT = random.randint(1,5)
+                    LEADER_HINT = random.randint(0,4)
                     if len(FAULTY_LEADERS) >= 3:
                         print("majority of leaders faulty")
                     else:
                         while LEADER_HINT in FAULTY_LEADERS: 
-                            LEADER_HINT = random.randint(1,5)
+                            LEADER_HINT = random.randint(0,4)
                         # if int(CLIENT_ID) == 1:
-                        #     LEADER_HINT = 1
+                        #     LEADER_HINT = 0
                         # else: 
                         #     LEADER_HINT = 3
                         print("sending to {}".format(LEADER_HINT))
                         SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
                         RECEIVED = False
                         FAULTY_LEADERS = []
-                        if len(FAILED_SERVERS) > 0: 
-                            for i in FAILED_SERVERS:
-                                FAULTY_LEADERS.append(i)
                         SERVER_SOCKET.sendall(p.dumps(("Operation", line, CLIENT_ID)))
                         # thread that sleeps for 5 seconds
-                        threading.Thread(target=time_out, args=(30.0, line)).start()
+                        threading.Thread(target=time_out, args=(5.0,line)).start()
                 else:
                     #send to server
                     print("sending to {}".format(LEADER_HINT))
                     SERVER_SOCKET = SERVER_SOCKETS[LEADER_HINT]
                     RECEIVED = False
                     FAULTY_LEADERS = []
-                    if len(FAILED_SERVERS) > 0: 
-                            for i in FAILED_SERVERS:
-                                FAULTY_LEADERS.append(i)
                     SERVER_SOCKET.sendall(p.dumps(("Operation", line, CLIENT_ID)))
-                    threading.Thread(target=time_out, args=(30.0, line)).start()
+                    threading.Thread(target=time_out, args=(5.0,line)).start()
             elif "reconnect" in line:
                 server = int(line[-1])
-                FAILED_SERVERS.remove(server)
                 print("reconnecting to server {}".format(server))
                 SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[server]))
@@ -121,36 +121,36 @@ def handle_inputs():
             pass
 
 def recv_server(server):
-    global SERVER_SOCKETS, RECEIVED, LEADER_HINT, FAULTY_LEADERS, FAILED_SERVERS
+    global SERVER_SOCKETS, RECEIVED, LEADER_HINT
     while True:
         if SERVER_SOCKETS[server] != None:
             print("checking word for server {}".format(server))
             word = SERVER_SOCKETS[server].recv(4096).decode()
             if word != "" and 'failProcess' not in word:
                 RECEIVED = True
-                print("{}: {}".format(server, word))
-                if word[-1] != "" and "DOES NOT EXIST" not in word and int(word[-1]) != LEADER_HINT and int(word[-1]) != 0:
-                    print("setting LEADER_HINT to {}".format(int(word[-1])))
-                    LEADER_HINT = int(word[-1])
+                print("{}: {}".format(server+1, word))
+                if word[2] != "" and "DOES NOT EXIST" not in word and int(word[2])-1 != LEADER_HINT and int(word[2])-1 != 0:
+                    print("setting LEADER_HINT to {}".format(int(word[2])-1))
+                    LEADER_HINT = int(word[2])-1
             elif 'failProcess' in word:
                 print("in failProcess")
                 # server id, subtract 1 to get array index from SERVER_SOCKETS
-                server_index = int(word[-1])
+                server_index = int(word[-1])-1
                 SERVER_SOCKETS[server_index].close()
                 SERVER_SOCKETS[server_index] = None
                 FAULTY_LEADERS.append(server_index)
-                FAILED_SERVERS.append(server_index)
                 if LEADER_HINT == server_index:
                     LEADER_HINT = None
 
 def handle_recv():
     # server listening for msgs
+    global SERVER_SOCKETS, LEADER_HINT, RECEIVED
     try: 
+        threading.Thread(target=recv_server, args=(0,)).start()
         threading.Thread(target=recv_server, args=(1,)).start()
         threading.Thread(target=recv_server, args=(2,)).start()
         threading.Thread(target=recv_server, args=(3,)).start()
         threading.Thread(target=recv_server, args=(4,)).start()
-        threading.Thread(target=recv_server, args=(5,)).start()
     except (socket.timeout, KeyboardInterrupt) as error:
         print(error)
         if error != "timed out":
@@ -159,11 +159,11 @@ def handle_recv():
 if __name__ == '__main__':
     CLIENT_ID = sys.argv[1]
 
-    for num in SERVER_NUMS:
+    for i in range(1,6):
         SERVER_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[num]))
+        SERVER_SOCKET.connect((socket.gethostname(), SERVER_PORTS[i]))
         SERVER_SOCKET.sendall(p.dumps(("client", CLIENT_ID)))
-        SERVER_SOCKETS[num] = SERVER_SOCKET
+        SERVER_SOCKETS.append(SERVER_SOCKET)
 
     threading.Thread(target=handle_inputs, args=()).start()
     handle_recv()
