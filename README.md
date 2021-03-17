@@ -41,7 +41,7 @@ By Xueyi Yao (@xueyiyao) and Justin Dong (@justindong1)
     checking word for server 5
     ```
 
-    Congrats! You have succesfully connected the clients to the servers!
+    Congrats! You have successfully setup the servers and the clients!
 
 ## User Inputs
 ### **Servers:** 
